@@ -1,0 +1,23 @@
+{
+  "name": "es-page",
+  "version": "0.0.0",
+  "homepage": "https://github.com/mnichols/es-page",
+  "authors": [
+    "Mike Nichols <nichols.mike.s@gmail.com>"
+  ],
+  "license": "MIT",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "bootstrap": "~3.3.0",
+    "lodash": "~2.4.1",
+    "stampit": "~1.1.0",
+    "bluebird": "~2.3.11"
+  }
+}
