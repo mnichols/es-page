@@ -8,24 +8,65 @@ var storage
     ,debug = console.debug.bind(console)
     ;
 
+transaction = stampit()
+    .state({
+        eventProviders: []
+    })
+    .methods({
+        add: function(eventProvider){
+            this.eventProviders.push(eventProvider)
+        }
+        ,commit: function(db){
+            this.eventProviders.forEach(db.commit.bind(db),this)
+            return Promise.resolve(this.eventProviders)
+                .each(function(provider){
+                    if(provider.render) {
+                        return provider.render()
+                    }
+                })
+        }
+    })
+uow = stampit()
+    .state({
+        transaction: undefined
+        ,db: undefined
+    })
+    .methods({
+        start: function(){
+            this.current = transaction()
+            return this
+        }
+        ,flush: function(){
+            this.current.commit(this.db)
+            this.current = undefined
+            return this
+        }
+        ,add: function(eventProvider) {
+            this.current.add(eventProvider)
+            return this
+        }
+    })
 bus = stampit()
     .state({
         subscriptions: {}
+        ,db: undefined
     })
     .methods({
         send: function(cmd) {
+            var unit = App.uow().start()
             var handler = this.subscriptions[cmd.id] && this.subscriptions[cmd.id][cmd.command]
             if(!handler) {
                 warn('NO HANDLERS',cmd)
                 return
             }
             debug('handling',cmd)
-            return handler(cmd)
+            handler(cmd)
+            unit.flush()
         }
-        ,subscribe: function(id,action,fn, context) {
+        ,subscribe: function(id,action,context) {
             var subs
             this.subscriptions[id] = subs = (this.subscriptions[id] || {})
-            subs[action] = fn.bind(context)
+            subs[action] = context[action].bind(context)
         }
         ,unsubscribe: function(id) {
             ;(delete this.subscriptions[id])
@@ -110,16 +151,25 @@ var App = stampit()
         }
     })
     .methods({
-        start: function(){
-            stampit.mixIn(this,{
-                db: storage()
-                ,bus: bus()
-            })
+        start: function(cmd) {
             var main = this.Models.main()
+            App.current.add(main)
             main.initialize()
-            this.db.commit(main)
-            return main.render()
         }
+        ,uow: function(){
+            this.current = uow({
+                db: this.db
+            })
+            return this.current
+        }
+    })
+    .enclose(function(){
+        stampit.mixIn(this,{
+            db: storage()
+            ,bus: bus()
+        })
+        this.bus.subscribe('app','start',this)
+
     })
     .create()
 
@@ -140,23 +190,27 @@ App.Models.main = stampit
     .methods({
         initialize: function() {
             this.raise({
-                event: 'initialize'
+                event: 'initialized'
                 ,id: cuid()
             })
         }
-        ,oninitialize: function(e) {
+        ,oninitialized: function(e) {
             this.id = e.id
-            App.bus.subscribe(this.id,'showGroups',this.showGroups,this)
+            App.bus.subscribe(this.id,'showGroups',this)
         }
         ,showGroups: function(cmd) {
             this.raise({
                 event: 'showedGroups'
                 ,id: this.id
             })
-            return this.render()
         }
         ,onshowedGroups: function(e) {
             this.groupable = true
+            //we want to initialize the 'groups' model
+            //and have it render
+            this.groups = App.Models.groups()
+            App.current.add(this.groups)
+            this.groups.initialize()
         }
     })
 App.Models.groups = stampit
@@ -172,12 +226,12 @@ App.Models.groups = stampit
     .methods({
         initialize: function(name){
             this.raise({
-                event: 'initialize'
+                event: 'initialized'
                 ,id: cuid()
                 ,name: name
             })
         }
-        ,oninitialize: function(e) {
+        ,oninitialized: function(e) {
             this.id = e.id
             this.groups = []
         }
@@ -256,6 +310,11 @@ function testStorage(){
     console.log('grps2',JSON.stringify(grps2, null, 2));
 }
 
-document.querySelector('.boot').addEventListener('click', App.start.bind(App))
+document.querySelector('.boot').addEventListener('click',function(e) {
+    return App.bus.send({
+        id: 'app'
+        ,command: 'start'
+    })
+})
 document.querySelector('.print').addEventListener('click', App.printStorage.bind(App))
 

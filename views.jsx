@@ -35,9 +35,23 @@ App.Views.Main = React.createClass({
 
 App.Views.Groups = React.createClass({
     displayName: 'Groups'
+    ,createGroup: function(e) {
+        e.preventDefault()
+        App.bus.send({
+            command: 'createGroup'
+            ,id: this.props.model.id
+            ,name: this.refs.groupName.getDOMNode().value
+        })
+    }
     ,render: function(){
         return (
-            <h1>Groups</h1>
+            <div className="groups">
+                <h1>Groups</h1>
+                <form onSubmit={this.createGroup}>
+                    <input type="text" className="groupName" refs="groupName"/>
+                    <button type="submit">Create Group</button>
+                </form>
+            </div>
         )
     }
 })
