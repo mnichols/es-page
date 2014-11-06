@@ -2,8 +2,35 @@
 var storage
     ,evented
     ,renderable
+    ,bus
+    ,log = console.log.bind(console)
+    ,warn = console.warn.bind(console)
+    ,debug = console.debug.bind(console)
     ;
 
+bus = stampit()
+    .state({
+        subscriptions: {}
+    })
+    .methods({
+        send: function(cmd) {
+            var handler = this.subscriptions[cmd.id] && this.subscriptions[cmd.id][cmd.command]
+            if(!handler) {
+                warn('NO HANDLERS',cmd)
+                return
+            }
+            debug('handling',cmd)
+            return handler(cmd)
+        }
+        ,subscribe: function(id,action,fn, context) {
+            var subs
+            this.subscriptions[id] = subs = (this.subscriptions[id] || {})
+            subs[action] = fn.bind(context)
+        }
+        ,unsubscribe: function(id) {
+            ;(delete this.subscriptions[id])
+        }
+    })
 
 storage = stampit()
     .state({
@@ -24,6 +51,10 @@ storage = stampit()
                 model.revision = e.revision
             })
             return model
+        }
+        ,print: function(){
+            console.log(JSON.stringify(this.events, null, 2))
+
         }
     })
 
@@ -52,7 +83,9 @@ renderable = stampit()
     .methods({
         render: function() {
             var promisifyRender = Promise.promisify(React.render)
-            return promisifyRender(React.createElement(this.view(),this), this.el())
+            return promisifyRender(React.createElement(this.view(),{
+                model: this
+            }), this.el())
         }
         ,view: function(){
             throw new Error('not implemented')
@@ -69,10 +102,19 @@ var App = stampit()
         Models: {}
         ,Views: {}
         ,db: undefined
+        ,printStorage: function(){
+            if(!this.db) {
+                return
+            }
+            return this.db.print()
+        }
     })
     .methods({
         start: function(){
-            this.db = storage()
+            stampit.mixIn(this,{
+                db: storage()
+                ,bus: bus()
+            })
             var main = this.Models.main()
             main.initialize()
             this.db.commit(main)
@@ -101,7 +143,16 @@ App.Models.main = stampit
         }
         ,oninitialize: function(e) {
             this.id = e.id
-            this.groups = []
+            App.bus.subscribe(this.id,'showGroups',this.showGroups,this)
+        }
+        ,showGroups: function(cmd) {
+            this.raise({
+                event: 'showedGroups'
+                ,id: this.id
+            })
+        }
+        ,onshowedGroups: function(e) {
+            debug('showedgroups')
         }
     })
 App.Models.groups = stampit
@@ -201,5 +252,6 @@ function testStorage(){
     console.log('grps2',JSON.stringify(grps2, null, 2));
 }
 
-document.body.addEventListener('click', App.start.bind(App))
+document.querySelector('.boot').addEventListener('click', App.start.bind(App))
+document.querySelector('.print').addEventListener('click', App.printStorage.bind(App))
 
