@@ -134,6 +134,9 @@ App.Models.main = stampit
             return App.Views.Main
         }
     })
+    .state({
+        groupable: false
+    })
     .methods({
         initialize: function() {
             this.raise({
@@ -150,9 +153,10 @@ App.Models.main = stampit
                 event: 'showedGroups'
                 ,id: this.id
             })
+            return this.render()
         }
         ,onshowedGroups: function(e) {
-            debug('showedgroups')
+            this.groupable = true
         }
     })
 App.Models.groups = stampit

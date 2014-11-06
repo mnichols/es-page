@@ -9,12 +9,25 @@ App.Views.Main = React.createClass({
         App.bus.send(cmd)
     }
     ,render: function(){
+        var groupsContainer
+            ,issuesContainer
+        if(this.props.model.groupable) {
+            groupsContainer = (
+                <div className="groups-container"></div>
+            )
+        }
+        if(this.props.model.issueable) {
+            issuesContainer = (
+                <div className="issues-container"></div>
+            )
+        }
+
         return (
             <div className="main">
                 <h1>ES Page</h1>
                 <button type="button" onClick={this.showGroups}>Show Groups</button>
-                <div className="groups-container"></div>
-                <div className="issues-container"></div>
+                {groupsContainer}
+                {issuesContainer}
             </div>
         )
     }
