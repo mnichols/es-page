@@ -1,3 +1,136 @@
+var storage = stampit()
+    .state({
+        events: []
+    })
+    .methods({
+        commit: function(eventProvider) {
+            var pending = eventProvider.events
+            this.events = this.events.concat(pending.splice(0,pending.length))
+            return eventProvider
+        }
+        ,restore: function(id, model) {
+            var events = this.events.filter(function(e){
+                return e.id === id
+            })
+            .forEach(function(e){
+                model['on' + e.event].call(model,e)
+                model.revision = e.revision
+            })
+            return model
+        }
+    })
+
+var evented = stampit()
+    .state({
+        events: []
+        ,revision: 0
+    })
+    .methods({
+        raise: function(e) {
+            this['on' + e.event].call(this,e)
+            e.revision = ++this.revision
+            this.events.push(e)
+        }
+        ,restore: function(events){
+            return Promise.resolve(events)
+                .bind(this)
+                .each(function(e){
+                    return this['on' + e.event].call(this, e)
+                    this.revision = e.revision
+                })
+        }
+    })
+
+
+var groups
+    ,group
+
+groups = stampit
+    .compose(evented)
+    .methods({
+        initialize: function(name){
+
+            this.raise({
+                event: 'initialize'
+                ,id: cuid()
+                ,name: name
+            })
+        }
+        ,oninitialize: function(e) {
+            this.id = e.id
+            this.groups = []
+        }
+        ,addGroup: function(groupName) {
+            if(!groupName) {
+                throw new Error('goupName is required')
+            }
+            var groupId = cuid()
+            this.raise({
+                event: 'addGroup'
+                ,id: this.id
+                ,groupId: groupId
+            })
+            this.raise({
+                event: 'renameGroup'
+                ,groupId: groupId
+                ,id: this.id
+                ,name: groupName
+            })
+        }
+        ,renameGroup: function(groupId, groupName) {
+            this.raise({
+                event: 'renameGroup'
+                ,groupId: groupId
+                ,id: this.id
+                ,name: groupName
+            })
+        }
+        ,onaddGroup: function(e) {
+            var grp = group({
+                id: e.groupId
+            })
+            this.groups.push(grp)
+        }
+        ,onrenameGroup: function(e) {
+            var grp = this.groups.filter(function(g){
+                return g.id === e.groupId
+            })[0]
+            grp.rename(e.name)
+        }
+    })
+
+group = stampit
+    .compose(evented)
+    .state({
+        id: undefined
+        ,name: undefined
+    })
+    .methods({
+        rename: function(newName) {
+            this.name = newName
+        }
+    })
+
+
+var eventStore = storage()
+function boot(){
+    var grps = groups()
+    grps.initialize('leftmain')
+    grps.addGroup('grp1')
+    grps.addGroup('grp2')
+    grps.addGroup('grp3')
+    eventStore.commit(grps)
+
+
+    var grps2 = eventStore.restore(grps.id,groups())
+    console.log('grps',JSON.stringify(grps, null, 2));
+    console.log('grps2',JSON.stringify(grps2, null, 2));
+
+}
+
+boot()
+
+/*
 var renderable = stampit()
     .methods({
         replaceEl: function(){
@@ -27,56 +160,6 @@ var renderable = stampit()
         }
         ,render: function(){
             return this.replaceEl()
-        }
-    })
-
-var evented = stampit()
-    .state({
-        events: []
-    })
-    .methods({
-        raise: function(e) {
-            console.log('raised',e)
-            this.events.push(e)
-        }
-        ,applyEvent: function(e) {
-            console.log('applied',e)
-            this['on' + e.event].call(this,e)
-            this.events.push(e)
-        }
-        ,restore: function(events){
-            return Promise.resolve(events)
-                .bind(this)
-                .each(function(e){
-                    return this.applyEvent.call(this, e)
-                })
-        }
-        ,replayQueue: function(upTo){
-            //phony method that fetches certain events
-            //and queues them up, then replays them
-            var events = [
-                { event: 'addChild', index: 0, revision: 1}
-                ,{ event: 'addChild', index: 1, revision: 1}
-                ,{ event: 'addChild', index: 2, revision: 1}
-                ,{ event: 'addChild', index: 3, revision: 1}
-                ,{ event: 'addChild', index: 4, revision: 2}
-                ,{ event: 'addChild', index: 5, revision: 2}
-                ,{ event: 'addChild', index: 6, revision: 2}
-                ,{ event: 'addChild', index: 7, revision: 2}
-                ,{ event: 'addChild', index: 8, revision: 3}
-                ,{ event: 'addChild', index: 9, revision: 3}
-                ,{ event: 'addChild', index: 10, revision: 3}
-                ,{ event: 'addChild', index: 11, revision: 3}
-                ,{ event: 'addChild', index: 12, revision: 4}
-                ,{ event: 'addChild', index: 13, revision: 4}
-                ,{ event: 'addChild', index: 14, revision: 4}
-                ,{ event: 'addChild', index: 15, revision: 4}
-            ]
-
-            return this.restore(events.filter(function(e){
-                return e.revision <= upTo
-            }))
-
         }
     })
 
@@ -128,13 +211,8 @@ var main = stampit.compose(renderable,evented)
         var self = this
         document.body.addEventListener('click',function(e){
             if(e.target.classList.contains('add-child')) {
-                self.applyEvent({ event: 'addChild', index: self.children.length})
+                self.applyEvent({ event: 'addChild', index: self.children.length, revision: self.revision + 1})
                 return self.rerender()
-            }
-            if(e.target.classList.contains('mount-others')) {
-                self.children.length = 0
-                return self.replayQueue(4)
-                    .then(self.rerender)
             }
         })
         document.body.addEventListener('change',function(e){
@@ -159,7 +237,6 @@ var main = stampit.compose(renderable,evented)
                     '<h1>ES PAGE</h1>' +
                     '<p>This is <%= name %></p>' +
                     '<a class="add-child">Add Child</a>' +
-                    '<button type="button" class="btn mount-others">Mount Others</button>' +
                     '<div class="children"></div>' +
                 '</div>'
 })
@@ -172,3 +249,4 @@ var main = stampit.compose(renderable,evented)
 
 
 main.create().start()
+*/
