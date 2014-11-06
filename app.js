@@ -1,4 +1,11 @@
-var storage = stampit()
+/*** infrastructure ***/
+var storage
+    ,evented
+    ,renderable
+    ;
+
+
+storage = stampit()
     .state({
         events: []
     })
@@ -20,7 +27,7 @@ var storage = stampit()
         }
     })
 
-var evented = stampit()
+evented = stampit()
     .state({
         events: []
         ,revision: 0
@@ -41,15 +48,74 @@ var evented = stampit()
         }
     })
 
+renderable = stampit()
+    .methods({
+        render: function() {
+            var promisifyRender = Promise.promisify(React.render)
+            return promisifyRender(React.createElement(this.view(),this), this.el())
+        }
+        ,view: function(){
+            throw new Error('not implemented')
+        }
+        ,el: function(){
+            throw new Error('not implemented')
+        }
+    })
 
-var groups
-    ,group
+/*** APP ***/
 
-groups = stampit
-    .compose(evented)
+var App = stampit()
+    .state({
+        Models: {}
+        ,Views: {}
+        ,db: undefined
+    })
+    .methods({
+        start: function(){
+            this.db = storage()
+            var main = this.Models.main()
+            main.initialize()
+            this.db.commit(main)
+            return main.render()
+        }
+    })
+    .create()
+
+
+App.Models.main = stampit
+    .compose(evented, renderable)
+    .methods({
+        el: function(){
+            return document.querySelector('.app')
+        }
+        ,view: function(){
+            return App.Views.Main
+        }
+    })
+    .methods({
+        initialize: function() {
+            this.raise({
+                event: 'initialize'
+                ,id: cuid()
+            })
+        }
+        ,oninitialize: function(e) {
+            this.id = e.id
+            this.groups = []
+        }
+    })
+App.Models.groups = stampit
+    .compose(evented, renderable)
+    .methods({
+        el: function(){
+            return document.querySelector('.groups-container')
+        }
+        ,view: function(){
+            return App.Views.Groups
+        }
+    })
     .methods({
         initialize: function(name){
-
             this.raise({
                 event: 'initialize'
                 ,id: cuid()
@@ -86,7 +152,7 @@ groups = stampit
             })
         }
         ,onaddGroup: function(e) {
-            var grp = group({
+            var grp = Models.group({
                 id: e.groupId
             })
             this.groups.push(grp)
@@ -99,8 +165,16 @@ groups = stampit
         }
     })
 
-group = stampit
-    .compose(evented)
+App.Models.group = stampit
+    .compose(renderable)
+    .methods({
+        el: function(){
+            return document.querySelector(this.id)
+        }
+        ,view: function(){
+            return App.Views.Group
+        }
+    })
     .state({
         id: undefined
         ,name: undefined
@@ -112,9 +186,9 @@ group = stampit
     })
 
 
-var eventStore = storage()
-function boot(){
-    var grps = groups()
+function testStorage(){
+    var eventStore = storage()
+    var grps = Models.groups()
     grps.initialize('leftmain')
     grps.addGroup('grp1')
     grps.addGroup('grp2')
@@ -122,131 +196,10 @@ function boot(){
     eventStore.commit(grps)
 
 
-    var grps2 = eventStore.restore(grps.id,groups())
+    var grps2 = eventStore.restore(grps.id,Models.groups())
     console.log('grps',JSON.stringify(grps, null, 2));
     console.log('grps2',JSON.stringify(grps2, null, 2));
-
 }
 
-boot()
+document.body.addEventListener('click', App.start.bind(App))
 
-/*
-var renderable = stampit()
-    .methods({
-        replaceEl: function(){
-            var self = this
-            return Promise.resolve(this.el())
-                .then(document.querySelector.bind(document))
-                .then(function(el){
-                    var content = _.template(self.template,self.data)
-                    el.innerHTML = content
-                    return el
-                })
-        }
-        ,appendEl: function(to){
-            to = document.querySelector(to)
-            return Promise.resolve('div')
-                .bind(document)
-                .then(document.createElement)
-                .bind(this)
-                .then(function(el){
-                    el.classList.add(this.el())
-                    var content = _.template(this.template,this.data)
-                    console.log('content',content)
-                    el.innerHTML = content
-                    to.appendChild(el)
-                    return el
-                })
-        }
-        ,render: function(){
-            return this.replaceEl()
-        }
-    })
-
-var child = stampit.compose(renderable)
-.state({
-    template: '<p>Child #<%= index %></p>'
-})
-.state({
-    index: undefined
-    ,data: {}
-})
-.methods({
-    el: function(){
-        return '.child-' + this.index
-    }
-    ,render: function(){
-        return this.appendEl('.children')
-    }
-})
-.enclose(function(){
-    stampit.mixIn(this.data,{
-        name: 'child' + this.index
-        ,index: this.index
-    })
-})
-
-var main = stampit.compose(renderable,evented)
-.state({
-    children: []
-})
-.methods({
-    el: function(){
-        return '.app'
-    }
-})
-.state({
-    data: {
-        name: 'main'
-    }
-    ,onaddChild: function(e) {
-        this.children.push(child({ index: e.index}))
-    }
-    ,rerender: function(){
-        return this.render()
-            .bind(this)
-            .then(this.renderChildren)
-    }
-    ,init: function(){
-        var self = this
-        document.body.addEventListener('click',function(e){
-            if(e.target.classList.contains('add-child')) {
-                self.applyEvent({ event: 'addChild', index: self.children.length, revision: self.revision + 1})
-                return self.rerender()
-            }
-        })
-        document.body.addEventListener('change',function(e){
-            if(e.target.classList.contains('revision-number')) {
-                self.children.length = 0
-                return self.replayQueue(parseInt(e.target.value, 10))
-                    .then(self.rerender)
-
-            }
-        })
-        return this.rerender()
-    }
-    ,renderChildren: function(kid, index) {
-        return Promise.resolve(this.children)
-            .each(function(kid){
-                console.log('kid',kid)
-                return kid.render()
-            })
-
-    }
-    ,template: '<div class="container">' +
-                    '<h1>ES PAGE</h1>' +
-                    '<p>This is <%= name %></p>' +
-                    '<a class="add-child">Add Child</a>' +
-                    '<div class="children"></div>' +
-                '</div>'
-})
-.methods({
-    start: function(){
-        return this.init()
-    }
-})
-
-
-
-main.create().start()
-*/
