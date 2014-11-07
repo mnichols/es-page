@@ -39,7 +39,7 @@ App.Views.Groups = React.createClass({
     ,createGroup: function(e) {
         e.preventDefault()
         App.bus.send({
-            command: 'createGroup'
+            command: 'addGroup'
             ,id: this.props.model.id
             ,name: this.refs.groupName.getDOMNode().value
         })

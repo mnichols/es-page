@@ -1,6 +1,7 @@
 /*** infrastructure ***/
 var storage
     ,evented
+    ,commandable
     ,renderable
     ,bus
     ,subscription
@@ -10,6 +11,7 @@ var storage
     ,error = console.error.bind(console)
     ,App
     ;
+
 
 transaction = stampit()
     .state({
@@ -100,6 +102,7 @@ bus = stampit()
                 ,action: action
                 ,context: context
             })
+            debug('subscribed',action,'to',id)
         }
         ,unsubscribe: function(id) {
             ;(delete this.subscriptions[id])
@@ -205,6 +208,9 @@ evented = stampit()
         }
     })
     .enclose(function(){
+        if(!this.id) {
+            throw new Error('id is required')
+        }
         //App itself is evented: @todo clean this up
         if(App && App.register) {
             if(!this.id) {
@@ -212,6 +218,19 @@ evented = stampit()
             }
             App.register(this)
         }
+    })
+
+commandable = stampit()
+    .enclose(function(){
+        if(!this.commands) {
+            return
+        }
+        if(!this.id) {
+            warn('id is not provider for ', this)
+        }
+        this.commands.forEach(function(cmd){
+            App.bus.subscribe(this.id, cmd, this)
+        },this)
     })
 
 renderable = stampit()
@@ -312,7 +331,7 @@ App = stampit
 
 
 App.Models.main = stampit
-    .compose(evented, renderable)
+    .compose(evented, renderable, commandable)
     .methods({
         el: function(){
             return document.querySelector('.app')
@@ -320,6 +339,11 @@ App.Models.main = stampit
         ,view: function(){
             return App.Views.Main
         }
+    })
+    .state({
+        commands: [
+            'showGroups'
+        ]
     })
     .state({
         groupable: false
@@ -334,8 +358,8 @@ App.Models.main = stampit
             .then(this.render)
         }
         ,oninitialized: function(e) {
-    //@todo move this to enclose
-            App.bus.subscribe(this.id,'showGroups',this)
+            this.id = e.id
+            //noop
         }
         ,showGroups: function(cmd) {
             return this.raise({
@@ -349,7 +373,6 @@ App.Models.main = stampit
             })
         }
         ,onshowedGroups: function(e) {
-            console.log('ONSHOWEDGROUPS',e)
             this.groupable = true
             //we want to initialize the 'groups' model
             //and have it render
@@ -359,7 +382,10 @@ App.Models.main = stampit
         }
     })
 App.Models.groups = stampit
-    .compose(evented, renderable)
+    .compose(evented, renderable, commandable)
+    .state({
+        commands: ['addGroup']
+    })
     .methods({
         el: function(){
             return document.querySelector('.groups-container')
@@ -390,6 +416,7 @@ App.Models.groups = stampit
                 event: 'addGroup'
                 ,groupId: groupId
             })
+            .bind(this)
             .then(function(){
                 return this.raise({
                     event: 'renameGroup'
@@ -406,7 +433,7 @@ App.Models.groups = stampit
             })
         }
         ,onaddGroup: function(e) {
-            var grp = Models.group({
+            var grp = App.Models.group({
                 id: e.groupId
             })
             this.groups.push(grp)
