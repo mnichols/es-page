@@ -26,6 +26,7 @@ uow = stampit()
     .state({
         transaction: undefined
         ,db: undefined
+        ,onFlushes: []
     })
     .methods({
         start: function(){
@@ -35,6 +36,9 @@ uow = stampit()
         ,flush: function(){
             this.current.commit(this.db)
             this.current = undefined
+            this.onFlushes.forEach(function(cb){
+                return cb(this.db.revision)
+            },this)
             return this
         }
         //if the storage is fastforwarding,
@@ -46,6 +50,9 @@ uow = stampit()
         ,add: function(eventProvider) {
             this.current.add(eventProvider)
             return this
+        }
+        ,onFlush: function(cb) {
+            this.onFlushes.push(cb)
         }
     })
 
@@ -79,7 +86,8 @@ bus = stampit()
                 .bind(sub)
                 .then(sub.invoke)
                 .bind(App.uow)
-                .bind(App.uow.flush)
+                .then(App.uow.flush)
+
         }
         ,subscribe: function(id,action,context) {
             var subs
@@ -226,11 +234,11 @@ var App = stampit()
             }
             return this.uow.add(eventProvider)
         }
-        ,revision: function(){
-            return this.db.revision
-        }
         ,reset: function(cmd){
             debug('fastforward to',cmd.revision)
+        }
+        ,refresh: function(revision){
+            return App.Views.Revision.render(revision)
         }
     })
     .enclose(function(){
@@ -241,6 +249,7 @@ var App = stampit()
         stampit.mixIn(this,{
             uow: uow({db: this.db})
         })
+        this.uow.onFlush(this.refresh.bind(this))
         this.bus.subscribe('app','start',this)
         this.bus.subscribe('app','reset',this)
 
@@ -262,10 +271,7 @@ App.Models.main = stampit
         groupable: false
     })
     .methods({
-        pageRevision: function(){
-            return App.revision()
-        }
-        ,initialize: function() {
+        initialize: function() {
             return this.raise({
                 event: 'initialized'
                 ,name: 'main!'

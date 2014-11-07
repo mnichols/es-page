@@ -24,7 +24,6 @@ App.Views.Main = React.createClass({
         return (
             <div className="main">
                 <h1>ES Page</h1>
-                <App.Views.Revision revision={this.props.model.pageRevision()}/>
                 <button type="button" onClick={this.showGroups}>Show Groups</button>
                 <div className="containers">
                     {groupsContainer}
@@ -85,6 +84,14 @@ App.Views.Revision = React.createClass({
                 <input type="number" value={rev} onChange={this.goToRevision} />
             </div>
         )
+    }
+    ,statics: {
+        render: function(revision){
+            var el = document.querySelector('.revision-container')
+            return React.render(<App.Views.Revision revision={revision}/>,
+                                el)
+
+        }
     }
 })
 
