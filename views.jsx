@@ -72,7 +72,7 @@ App.Views.Revision = React.createClass({
         e.preventDefault()
         var value = this.refs.revision.getDOMNode().value
         App.bus.send({
-            command: 'reset'
+            command: 'goToRevision'
             ,id: 'app'
             ,revision: parseInt(value, 10)
         })
@@ -83,7 +83,8 @@ App.Views.Revision = React.createClass({
             <div className="revision">
                 <form onSubmit={this.goToRevision}>
                     <label>Revision</label>
-                    <input type="number" ref="revision" defaultValue={rev} />
+                    <p>Max revision:<span> {rev} </span> </p>
+                    <input type="number" ref="revision" />
                     <button type="submit">Go To Revision</button>
                 </form>
             </div>

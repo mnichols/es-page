@@ -7,6 +7,8 @@ var storage
     ,log = console.log.bind(console)
     ,warn = console.warn.bind(console)
     ,debug = console.debug.bind(console)
+    ,error = console.error.bind(console)
+    ,App
     ;
 
 transaction = stampit()
@@ -109,6 +111,7 @@ storage = stampit()
         ,eventProviders: {}
         ,revision: 0
         ,envelopes: []
+        ,streaming: false
     })
     .methods({
         commit: function(eventProvider) {
@@ -123,28 +126,60 @@ storage = stampit()
             eventProvider.events.length = 0
             return eventProvider
         }
-        ,restore: function(id, model) {
-            var events = this.events.filter(function(e){
-                return e.id === id
-            })
-            //make this async
-            .forEach(function(e){
-                model['on' + e.event].call(model,e)
-                model.revision = e.revision
-            })
-            return model
-        }
         ,print: function(){
             console.log('envelopes','--->',JSON.stringify(this.envelopes, null, 2))
             console.log('events','--->',JSON.stringify(this.events, null, 2))
         }
         ,isStreaming: function(){
-            return false
+            return this.streaming
         }
         ,register: function(eventProvider) {
+            log('REGISTERING',eventProvider.id,eventProvider)
             //this registers the provider to receive events during a stream
-            this.eventProviders[eventProvider.id] = eventProvider.id
+            this.eventProviders[eventProvider.id] = eventProvider
         }
+    })
+    .enclose(function(){
+        function process(events) {
+            if(!events.length) {
+                this.streaming = false
+                return Promise.resolve(this)
+            }
+            this.streaming = true
+            var event = events.shift()
+            debug('processing',event.id,event.event,event)
+            var model = this.eventProviders[event.id]
+            if(!model) {
+                var msg = 'model not found for ' + event.id
+                error(msg,this.eventProviders)
+                throw new Error(msg)
+            }
+            return Promise.resolve(event)
+                .bind(model)
+                .then(function(e) {
+                    debug('invoking',event.event,'on',model.id)
+                    return model['on' + event.event].call(model,e)
+                })
+                .bind(this)
+                .then(process.bind(this, events))
+        }
+        stampit.mixIn(this, {
+            restore: function(eventable, revision) {
+                this.register(eventable)
+                var envelopes = this.envelopes.filter(function(e) {
+                    return e.revision <= revision
+                })
+                debug('matched',envelopes.length,'envelopes')
+                var events = envelopes.reduce(function(arr, curr) {
+                    arr = arr.concat(curr.events)
+                    return arr
+                }, [])
+                debug('streaming',events.length,'events')
+                return process.call(this,events)
+            }
+        })
+
+
     })
 
 evented = stampit()
@@ -155,6 +190,7 @@ evented = stampit()
     })
     .methods({
         raise: function(e) {
+            e.id = this.id
             return Promise.resolve(e)
                 .bind(this)
                 .then(this['on' + e.event])
@@ -165,19 +201,15 @@ evented = stampit()
                 .bind(this.events)
                 .then(this.events.push)
         }
-        ,restore: function(events){
-            return Promise.resolve(events)
-                .bind(this)
-                .each(function(e){
-                    return this['on' + e.event].call(this, e)
-                    this.revision = e.revision
-                })
-        }
     })
     .enclose(function(){
-        //register this instance for streaming activity
-        //or, register it in the current uow
-        App.register(this)
+        //App itself is evented: @todo clean this up
+        if(App && App.register) {
+            if(!this.id) {
+                throw new Error('id has not been assigned')
+            }
+            App.register(this)
+        }
     })
 
 renderable = stampit()
@@ -208,12 +240,14 @@ renderable = stampit()
 
 /*** APP ***/
 
-var App = stampit()
+App = stampit
+    .compose(evented)
     .state({
         Models: {}
         ,Views: {}
         ,db: undefined
         ,uow: undefined
+        ,id: 'app'
         ,printStorage: function(){
             if(!this.db) {
                 return
@@ -223,10 +257,23 @@ var App = stampit()
     })
     .methods({
         start: function(cmd) {
-            var main = this.Models.main({
-                id: cuid()
+            //manually add this thing so the event gets added
+            this.uow.add(this)
+            return this.raise({
+                id: this.id
+                ,event: 'mainCreated'
+                ,mainId: cuid()
             })
-            return main.initialize()
+            .bind(this)
+            .then(function(){
+                return this.main.initialize()
+            })
+        }
+        ,onmainCreated: function(e) {
+            debug('creating main',e.mainId)
+            this.main = this.Models.main({
+                id: e.mainId
+            })
         }
         ,register: function(eventProvider) {
             if(this.db.isStreaming()) {
@@ -240,6 +287,10 @@ var App = stampit()
         ,refresh: function(revision){
             return App.Views.Revision.render(revision)
         }
+        ,goToRevision: function(cmd){
+            this.main = undefined
+            return this.db.restore(this, cmd.revision)
+        }
     })
     .enclose(function(){
         stampit.mixIn(this,{
@@ -250,8 +301,9 @@ var App = stampit()
             uow: uow({db: this.db})
         })
         this.uow.onFlush(this.refresh.bind(this))
-        this.bus.subscribe('app','start',this)
-        this.bus.subscribe('app','reset',this)
+        this.bus.subscribe(this.id,'start',this)
+        this.bus.subscribe(this.id,'reset',this)
+        this.bus.subscribe(this.id,'goToRevision',this)
 
     })
     .create()
@@ -275,13 +327,12 @@ App.Models.main = stampit
             return this.raise({
                 event: 'initialized'
                 ,name: 'main!'
-                ,id: cuid()
             })
             .bind(this)
             .then(this.render)
         }
         ,oninitialized: function(e) {
-            this.id = e.id
+    //@todo move this to enclose
             App.bus.subscribe(this.id,'showGroups',this)
         }
         ,showGroups: function(cmd) {
