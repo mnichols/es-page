@@ -49,7 +49,7 @@ App.Views.Groups = React.createClass({
             <div className="groups">
                 <h1>Groups</h1>
                 <form onSubmit={this.createGroup}>
-                    <input type="text" className="groupName" refs="groupName"/>
+                    <input type="text" className="groupName" ref="groupName"/>
                     <button type="submit">Create Group</button>
                 </form>
             </div>
@@ -69,7 +69,8 @@ App.Views.Issues = React.createClass({
 App.Views.Revision = React.createClass({
     displayName: 'Revision'
     ,goToRevision: function(e) {
-        var value = e.target.value
+        e.preventDefault()
+        var value = this.refs.revision.getDOMNode().value
         App.bus.send({
             command: 'reset'
             ,id: 'app'
@@ -80,8 +81,11 @@ App.Views.Revision = React.createClass({
         var rev = this.props.revision
         return (
             <div className="revision">
-                <label>Revision</label>
-                <input type="number" value={rev} onChange={this.goToRevision} />
+                <form onSubmit={this.goToRevision}>
+                    <label>Revision</label>
+                    <input type="number" ref="revision" defaultValue={rev} />
+                    <button type="submit">Go To Revision</button>
+                </form>
             </div>
         )
     }
