@@ -26,8 +26,10 @@ App.Views.Main = React.createClass({
                 <h1>ES Page</h1>
                 <App.Views.Revision revision={this.props.model.pageRevision()}/>
                 <button type="button" onClick={this.showGroups}>Show Groups</button>
-                {groupsContainer}
-                {issuesContainer}
+                <div className="containers">
+                    {groupsContainer}
+                    {issuesContainer}
+                </div>
             </div>
         )
     }
@@ -77,7 +79,6 @@ App.Views.Revision = React.createClass({
     }
     ,render: function(){
         var rev = this.props.revision
-        console.log('number',rev)
         return (
             <div className="revision">
                 <label>Revision</label>

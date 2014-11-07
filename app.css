@@ -5,11 +5,11 @@ body {
     height: 100%;
     width: 100%;
 }
-.main {
+.main .containers {
     display: flex;
     flex-direction: row;
 }
-.main > * {
+.main .containers > * {
     flex: 1;
 }
 
