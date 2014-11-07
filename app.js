@@ -83,6 +83,7 @@ bus = stampit()
                 warn('NO HANDLERS',cmd)
                 return
             }
+            App.uow.add(sub.context)
             debug('handling',cmd)
             return Promise.resolve(cmd)
                 .bind(sub)
@@ -165,6 +166,7 @@ storage = stampit()
         }
         stampit.mixIn(this, {
             restore: function(eventable, revision) {
+                warn('restoring to',revision)
                 this.register(eventable)
                 var envelopes = this.envelopes.filter(function(e) {
                     return e.revision <= revision
@@ -338,7 +340,6 @@ App.Models.main = stampit
         ,showGroups: function(cmd) {
             return this.raise({
                 event: 'showedGroups'
-                ,id: this.id
                 ,groupsId: cuid()
             })
             .bind(this)
@@ -348,6 +349,7 @@ App.Models.main = stampit
             })
         }
         ,onshowedGroups: function(e) {
+            console.log('ONSHOWEDGROUPS',e)
             this.groupable = true
             //we want to initialize the 'groups' model
             //and have it render
@@ -370,7 +372,6 @@ App.Models.groups = stampit
         initialize: function(name){
             return this.raise({
                 event: 'initialized'
-                ,id: cuid()
                 ,name: name
             })
             .bind(this)
@@ -387,14 +388,12 @@ App.Models.groups = stampit
             var groupId = cuid()
             return this.raise({
                 event: 'addGroup'
-                ,id: this.id
                 ,groupId: groupId
             })
             .then(function(){
                 return this.raise({
                     event: 'renameGroup'
                     ,groupId: groupId
-                    ,id: this.id
                     ,name: groupName
                 })
             })
@@ -403,7 +402,6 @@ App.Models.groups = stampit
             return this.raise({
                 event: 'renameGroup'
                 ,groupId: groupId
-                ,id: this.id
                 ,name: groupName
             })
         }
