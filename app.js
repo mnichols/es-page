@@ -19,11 +19,6 @@ transaction = stampit()
         ,commit: function(db){
             this.eventProviders.forEach(db.commit.bind(db),this)
             return Promise.resolve(this.eventProviders)
-                .each(function(provider){
-                    if(provider.render) {
-                        return provider.render()
-                    }
-                })
         }
     })
 uow = stampit()
@@ -37,11 +32,19 @@ uow = stampit()
             return this
         }
         ,flush: function(){
+            debug('flushing uow',this.current.eventProviders)
             this.current.commit(this.db)
             this.current = undefined
             return this
         }
+        //if the storage is fastforwarding,
+        //then this will include the eventProvider
+        //to recieve events.
+        //if a unit of work is in process, then this will
+        //cause the event provider to contribute its events
+        //to the event store.
         ,add: function(eventProvider) {
+            debug('adding',eventProvider.id,'to uow')
             this.current.add(eventProvider)
             return this
         }
@@ -53,15 +56,16 @@ bus = stampit()
     })
     .methods({
         send: function(cmd) {
-            var unit = App.uow().start()
+            App.uow.start()
             var handler = this.subscriptions[cmd.id] && this.subscriptions[cmd.id][cmd.command]
             if(!handler) {
                 warn('NO HANDLERS',cmd)
                 return
             }
             debug('handling',cmd)
-            handler(cmd)
-            unit.flush()
+            return handler(cmd)
+                .bind(App.uow)
+                .then(App.uow.flush)
         }
         ,subscribe: function(id,action,context) {
             var subs
@@ -76,10 +80,12 @@ bus = stampit()
 storage = stampit()
     .state({
         events: []
+        ,eventProviders: {}
     })
     .methods({
         commit: function(eventProvider) {
             var pending = eventProvider.events
+            debug('eventProvider',eventProvider.id,'has',eventProvider.events.length)
             this.events = this.events.concat(pending.splice(0,pending.length))
             return eventProvider
         }
@@ -87,6 +93,7 @@ storage = stampit()
             var events = this.events.filter(function(e){
                 return e.id === id
             })
+            //make this async
             .forEach(function(e){
                 model['on' + e.event].call(model,e)
                 model.revision = e.revision
@@ -95,7 +102,13 @@ storage = stampit()
         }
         ,print: function(){
             console.log(JSON.stringify(this.events, null, 2))
-
+        }
+        ,isStreaming: function(){
+            return false
+        }
+        ,register: function(eventProvider) {
+            //this registers the provider to receive events during a stream
+            this.eventProviders[eventProvider.id] = eventProvider.id
         }
     })
 
@@ -103,12 +116,19 @@ evented = stampit()
     .state({
         events: []
         ,revision: 0
+        ,id: undefined
     })
     .methods({
         raise: function(e) {
-            this['on' + e.event].call(this,e)
-            e.revision = ++this.revision
-            this.events.push(e)
+            return Promise.resolve(e)
+                .bind(this)
+                .then(this['on' + e.event])
+                .then(function(){
+                    e.revision = ++this.revision
+                    return e
+                })
+                .bind(this.events)
+                .then(this.events.push)
         }
         ,restore: function(events){
             return Promise.resolve(events)
@@ -119,14 +139,19 @@ evented = stampit()
                 })
         }
     })
+    .enclose(function(){
+        //register this instance for streaming activity
+        //or, register it in the current uow
+        App.register(this)
+    })
 
 renderable = stampit()
     .methods({
         render: function() {
-            var promisifyRender = Promise.promisify(React.render)
-            return promisifyRender(React.createElement(this.view(),{
-                model: this
-            }), this.el())
+            return this.raise({
+                event: 'rendered'
+                ,id: this.id
+            })
         }
         ,view: function(){
             throw new Error('not implemented')
@@ -134,6 +159,16 @@ renderable = stampit()
         ,el: function(){
             throw new Error('not implemented')
         }
+        ,onrendered: function(e) {
+            return this.reactify(React.createElement(this.view(),{
+                model: this
+            }), this.el())
+        }
+    })
+    .enclose(function(){
+        stampit.mixIn(this,{
+            reactify: Promise.promisify(React.render)
+        })
     })
 
 /*** APP ***/
@@ -143,6 +178,7 @@ var App = stampit()
         Models: {}
         ,Views: {}
         ,db: undefined
+        ,uow: undefined
         ,printStorage: function(){
             if(!this.db) {
                 return
@@ -152,21 +188,25 @@ var App = stampit()
     })
     .methods({
         start: function(cmd) {
-            var main = this.Models.main()
-            App.current.add(main)
-            main.initialize()
-        }
-        ,uow: function(){
-            this.current = uow({
-                db: this.db
+            var main = this.Models.main({
+                id: cuid()
             })
-            return this.current
+            return main.initialize()
+        }
+        ,register: function(eventProvider) {
+            if(this.db.isStreaming()) {
+                return this.db.register(eventProvider)
+            }
+            return this.uow.add(eventProvider)
         }
     })
     .enclose(function(){
         stampit.mixIn(this,{
             db: storage()
             ,bus: bus()
+        })
+        stampit.mixIn(this,{
+            uow: uow({db: this.db})
         })
         this.bus.subscribe('app','start',this)
 
@@ -189,28 +229,37 @@ App.Models.main = stampit
     })
     .methods({
         initialize: function() {
-            this.raise({
+            return this.raise({
                 event: 'initialized'
+                ,name: 'main!'
                 ,id: cuid()
             })
+            .bind(this)
+            .then(this.render)
         }
         ,oninitialized: function(e) {
             this.id = e.id
             App.bus.subscribe(this.id,'showGroups',this)
         }
         ,showGroups: function(cmd) {
-            this.raise({
+            return this.raise({
                 event: 'showedGroups'
                 ,id: this.id
+                ,groupsId: cuid()
+            })
+            .bind(this)
+            .then(this.render)
+            .then(function(){
+                return this.groups.initialize()
             })
         }
         ,onshowedGroups: function(e) {
             this.groupable = true
             //we want to initialize the 'groups' model
             //and have it render
-            this.groups = App.Models.groups()
-            App.current.add(this.groups)
-            this.groups.initialize()
+            this.groups = App.Models.groups({
+                id: e.groupsId
+            })
         }
     })
 App.Models.groups = stampit
@@ -225,11 +274,13 @@ App.Models.groups = stampit
     })
     .methods({
         initialize: function(name){
-            this.raise({
+            return this.raise({
                 event: 'initialized'
                 ,id: cuid()
                 ,name: name
             })
+            .bind(this)
+            .then(this.render)
         }
         ,oninitialized: function(e) {
             this.id = e.id
@@ -240,20 +291,22 @@ App.Models.groups = stampit
                 throw new Error('goupName is required')
             }
             var groupId = cuid()
-            this.raise({
+            return this.raise({
                 event: 'addGroup'
                 ,id: this.id
                 ,groupId: groupId
             })
-            this.raise({
-                event: 'renameGroup'
-                ,groupId: groupId
-                ,id: this.id
-                ,name: groupName
+            .then(function(){
+                return this.raise({
+                    event: 'renameGroup'
+                    ,groupId: groupId
+                    ,id: this.id
+                    ,name: groupName
+                })
             })
         }
         ,renameGroup: function(groupId, groupName) {
-            this.raise({
+            return this.raise({
                 event: 'renameGroup'
                 ,groupId: groupId
                 ,id: this.id

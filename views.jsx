@@ -5,7 +5,6 @@ App.Views.Main = React.createClass({
             id: this.props.model.id
             ,command: 'showGroups'
         }
-        debug('sending',cmd)
         App.bus.send(cmd)
     }
     ,render: function(){
