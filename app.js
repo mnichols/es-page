@@ -3,6 +3,7 @@ var storage
     ,evented
     ,renderable
     ,bus
+    ,subscription
     ,log = console.log.bind(console)
     ,warn = console.warn.bind(console)
     ,debug = console.debug.bind(console)
@@ -32,7 +33,6 @@ uow = stampit()
             return this
         }
         ,flush: function(){
-            debug('flushing uow',this.current.eventProviders)
             this.current.commit(this.db)
             this.current = undefined
             return this
@@ -44,11 +44,23 @@ uow = stampit()
         //cause the event provider to contribute its events
         //to the event store.
         ,add: function(eventProvider) {
-            debug('adding',eventProvider.id,'to uow')
             this.current.add(eventProvider)
             return this
         }
     })
+
+subscription = stampit()
+    .state({
+        id: undefined
+        ,action: undefined
+        ,context: undefined
+    })
+    .methods({
+        invoke: function(cmd){
+            return this.context[this.action].call(this.context,cmd)
+        }
+    })
+
 bus = stampit()
     .state({
         subscriptions: {}
@@ -57,20 +69,26 @@ bus = stampit()
     .methods({
         send: function(cmd) {
             App.uow.start()
-            var handler = this.subscriptions[cmd.id] && this.subscriptions[cmd.id][cmd.command]
-            if(!handler) {
+            var sub = this.subscriptions[cmd.id] && this.subscriptions[cmd.id][cmd.command]
+            if(!sub) {
                 warn('NO HANDLERS',cmd)
                 return
             }
             debug('handling',cmd)
-            return handler(cmd)
+            return Promise.resolve(cmd)
+                .bind(sub)
+                .then(sub.invoke)
                 .bind(App.uow)
-                .then(App.uow.flush)
+                .bind(App.uow.flush)
         }
         ,subscribe: function(id,action,context) {
             var subs
             this.subscriptions[id] = subs = (this.subscriptions[id] || {})
-            subs[action] = context[action].bind(context)
+            subs[action] = subscription({
+                id: id
+                ,action: action
+                ,context: context
+            })
         }
         ,unsubscribe: function(id) {
             ;(delete this.subscriptions[id])
@@ -81,12 +99,20 @@ storage = stampit()
     .state({
         events: []
         ,eventProviders: {}
+        ,revision: 0
+        ,envelopes: []
     })
     .methods({
         commit: function(eventProvider) {
             var pending = eventProvider.events
-            debug('eventProvider',eventProvider.id,'has',eventProvider.events.length)
-            this.events = this.events.concat(pending.splice(0,pending.length))
+            this.revision = this.revision += pending.length
+            var envelope = {
+                revision: this.revision
+                ,events: pending.splice(0,pending.length)
+            }
+            this.events = this.events.concat(envelope.events)
+            this.envelopes.push(envelope)
+            eventProvider.events.length = 0
             return eventProvider
         }
         ,restore: function(id, model) {
@@ -101,7 +127,8 @@ storage = stampit()
             return model
         }
         ,print: function(){
-            console.log(JSON.stringify(this.events, null, 2))
+            console.log('envelopes','--->',JSON.stringify(this.envelopes, null, 2))
+            console.log('events','--->',JSON.stringify(this.events, null, 2))
         }
         ,isStreaming: function(){
             return false
@@ -199,6 +226,12 @@ var App = stampit()
             }
             return this.uow.add(eventProvider)
         }
+        ,revision: function(){
+            return this.db.revision
+        }
+        ,reset: function(cmd){
+            debug('fastforward to',cmd.revision)
+        }
     })
     .enclose(function(){
         stampit.mixIn(this,{
@@ -209,6 +242,7 @@ var App = stampit()
             uow: uow({db: this.db})
         })
         this.bus.subscribe('app','start',this)
+        this.bus.subscribe('app','reset',this)
 
     })
     .create()
@@ -228,7 +262,10 @@ App.Models.main = stampit
         groupable: false
     })
     .methods({
-        initialize: function() {
+        pageRevision: function(){
+            return App.revision()
+        }
+        ,initialize: function() {
             return this.raise({
                 event: 'initialized'
                 ,name: 'main!'

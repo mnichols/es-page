@@ -24,6 +24,7 @@ App.Views.Main = React.createClass({
         return (
             <div className="main">
                 <h1>ES Page</h1>
+                <App.Views.Revision revision={this.props.model.pageRevision()}/>
                 <button type="button" onClick={this.showGroups}>Show Groups</button>
                 {groupsContainer}
                 {issuesContainer}
@@ -60,6 +61,28 @@ App.Views.Issues = React.createClass({
     ,render: function(){
         return (
             <h1>Issues</h1>
+        )
+    }
+})
+
+App.Views.Revision = React.createClass({
+    displayName: 'Revision'
+    ,goToRevision: function(e) {
+        var value = e.target.value
+        App.bus.send({
+            command: 'reset'
+            ,id: 'app'
+            ,revision: parseInt(value, 10)
+        })
+    }
+    ,render: function(){
+        var rev = this.props.revision
+        console.log('number',rev)
+        return (
+            <div className="revision">
+                <label>Revision</label>
+                <input type="number" value={rev} onChange={this.goToRevision} />
+            </div>
         )
     }
 })
