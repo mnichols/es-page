@@ -6,10 +6,18 @@ body {
     width: 100%;
 }
 .main .containers {
+    background-color: green;
     display: flex;
     flex-direction: row;
 }
 .main .containers > * {
     flex: 1;
+    margin: 5px;
+}
+.issues-container {
+    background-color: #ccc;
+}
+.groups-container {
+    background-color: #f1f1f1;
 }
 

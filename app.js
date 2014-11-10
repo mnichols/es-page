@@ -21,8 +21,8 @@ transaction = stampit()
         add: function(eventProvider){
             this.eventProviders.push(eventProvider)
         }
-        ,commit: function(db){
-            this.eventProviders.forEach(db.commit.bind(db),this)
+        ,commit: function(db,revision){
+            this.eventProviders.forEach(db.commit.bind(db,revision),this)
             return Promise.resolve(this.eventProviders)
         }
     })
@@ -31,6 +31,7 @@ uow = stampit()
         transaction: undefined
         ,db: undefined
         ,onFlushes: []
+        ,revision: 0
     })
     .methods({
         start: function(){
@@ -38,10 +39,10 @@ uow = stampit()
             return this
         }
         ,flush: function(){
-            this.current.commit(this.db)
+            this.current.commit(this.db, ++this.revision)
             this.current = undefined
             this.onFlushes.forEach(function(cb){
-                return cb(this.db.revision)
+                return cb(this.revision)
             },this)
             return this
         }
@@ -118,11 +119,11 @@ storage = stampit()
         ,streaming: false
     })
     .methods({
-        commit: function(eventProvider) {
+        commit: function(revision, eventProvider) {
             var pending = eventProvider.events
-            this.revision = this.revision += pending.length
+            //this.revision = this.revision += pending.length
             var envelope = {
-                revision: this.revision
+                revision: revision
                 ,events: pending.splice(0,pending.length)
             }
             this.events = this.events.concat(envelope.events)
@@ -343,10 +344,14 @@ App.Models.main = stampit
     .state({
         commands: [
             'showGroups'
+            ,'showIssues'
         ]
     })
     .state({
         groupable: false
+        ,issueable: false
+        ,groups: undefined
+        ,issues: undefined
     })
     .methods({
         initialize: function() {
@@ -372,6 +377,17 @@ App.Models.main = stampit
                 return this.groups.initialize()
             })
         }
+        ,showIssues: function(cmd) {
+            return this.raise({
+                event: 'showedIssues'
+                ,issuesId: cuid()
+            })
+            .bind(this)
+            .then(this.render)
+            .then(function(){
+                return this.issues.initialize()
+            })
+        }
         ,onshowedGroups: function(e) {
             this.groupable = true
             //we want to initialize the 'groups' model
@@ -380,7 +396,62 @@ App.Models.main = stampit
                 id: e.groupsId
             })
         }
+        ,onshowedIssues: function(e) {
+            this.issueable = true
+            //we want to initialize the 'groups' model
+            //and have it render
+            this.issues = App.Models.issues({
+                id: e.issuesId
+            })
+        }
     })
+
+App.Models.issues = stampit
+    .compose(evented, renderable, commandable)
+    .state({
+        commands: ['addIssue']
+    })
+    .methods({
+        el: function(){
+            return document.querySelector('.issues-container')
+        }
+        ,view: function(){
+            return App.Views.Issues
+        }
+    })
+    .methods({
+        initialize: function(name){
+            return this.raise({
+                event: 'initialized'
+                ,name: name
+            })
+            .bind(this)
+            .then(this.render)
+        }
+        ,oninitialized: function(e) {
+            this.id = e.id
+            this.issues = []
+        }
+        ,addIssue: function(cmd) {
+            var name = cmd.name
+            return this.raise({
+                event: 'issueAdded'
+                ,issueId: cuid()
+                ,name: name
+            })
+            .bind(this)
+            .then(this.render)
+        }
+        ,onissueAdded: function(e){
+            this.issues.push(App.Models.issue({
+                name: e.name
+                ,id: e.issueId
+            }))
+        }
+
+    })
+
+
 App.Models.groups = stampit
     .compose(evented, renderable, commandable)
     .state({
@@ -414,13 +485,13 @@ App.Models.groups = stampit
             }
             var groupId = cuid()
             return this.raise({
-                event: 'addGroup'
+                event: 'groupAdded'
                 ,groupId: groupId
             })
             .bind(this)
             .then(function(){
                 return this.raise({
-                    event: 'renameGroup'
+                    event: 'groupRenamed'
                     ,groupId: groupId
                     ,name: groupName
                 })
@@ -438,17 +509,37 @@ App.Models.groups = stampit
             })
             .then(this.render)
         }
-        ,onaddGroup: function(e) {
+        ,ongroupAdded: function(e) {
             var grp = App.Models.group({
                 id: e.groupId
             })
             this.groups.push(grp)
         }
-        ,onrenameGroup: function(e) {
+        ,ongroupRenamed: function(e) {
             var grp = this.groups.filter(function(g){
                 return g.id === e.groupId
             })[0]
             grp.rename(e.name)
+        }
+    })
+
+App.Models.issue = stampit
+    .compose(renderable)
+    .methods({
+        el: function(){
+            return document.querySelector(this.id)
+        }
+        ,view: function(){
+            return App.Views.Issue
+        }
+    })
+    .state({
+        id: undefined
+        ,name: undefined
+    })
+    .methods({
+        rename: function(newName) {
+            this.name = newName
         }
     })
 

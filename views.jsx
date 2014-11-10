@@ -7,17 +7,24 @@ App.Views.Main = React.createClass({
         }
         App.bus.send(cmd)
     }
+    ,showIssues: function(e) {
+        var cmd = {
+            id: this.props.model.id
+            ,command: 'showIssues'
+        }
+        App.bus.send(cmd)
+    }
     ,render: function(){
         var groupsContainer
             ,issuesContainer
         if(this.props.model.groupable) {
             groupsContainer = (
-                <div className="groups-container"></div>
+                <div className="groups-container well"></div>
             )
         }
         if(this.props.model.issueable) {
             issuesContainer = (
-                <div className="issues-container"></div>
+                <div className="issues-container well"></div>
             )
         }
 
@@ -25,6 +32,7 @@ App.Views.Main = React.createClass({
             <div className="main">
                 <h1>ES Page</h1>
                 <button type="button" onClick={this.showGroups}>Show Groups</button>
+                <button type="button" onClick={this.showIssues}>Show Issues</button>
                 <div className="containers">
                     {groupsContainer}
                     {issuesContainer}
@@ -34,6 +42,40 @@ App.Views.Main = React.createClass({
     }
 })
 
+App.Views.Issues = React.createClass({
+    displayName: 'Issues'
+    ,createIssue: function(e) {
+        e.preventDefault()
+        App.bus.send({
+            command: 'addIssue'
+            ,id: this.props.model.id
+            ,name: this.refs.issueName.getDOMNode().value
+        })
+    }
+    ,renderIssues: function(model) {
+        return model.issues.map(function(iss,idx){
+            return <li key={idx}>{iss.name}</li>
+        })
+    }
+    ,render: function(){
+        var model = this.props.model
+            ,issues = this.renderIssues(model)
+        return (
+            <div className="issues">
+                <h1>Issues</h1>
+                <form onSubmit={this.createIssue}>
+                    <input type="text" className="issueName" ref="issueName"/>
+                    <button type="submit">Create Issue</button>
+                </form>
+                <h2>Current Issues</h2>
+                <ul>
+                    {issues}
+                </ul>
+            </div>
+        )
+    }
+
+})
 App.Views.Groups = React.createClass({
     displayName: 'Groups'
     ,createGroup: function(e) {
@@ -45,8 +87,8 @@ App.Views.Groups = React.createClass({
         })
     }
     ,renderGroups: function(model){
-        return model.groups.map(function(grp){
-            return <li>{grp.name}</li>
+        return model.groups.map(function(grp,idx){
+            return <li key={idx}>{grp.name}</li>
         })
     }
     ,render: function(){
@@ -68,14 +110,6 @@ App.Views.Groups = React.createClass({
     }
 })
 
-App.Views.Issues = React.createClass({
-    displayName: 'Issues'
-    ,render: function(){
-        return (
-            <h1>Issues</h1>
-        )
-    }
-})
 
 App.Views.Revision = React.createClass({
     displayName: 'Revision'
