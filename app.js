@@ -447,6 +447,7 @@ App.Models.issues = stampit
                 name: e.name
                 ,id: e.issueId
             }))
+            //window.history.pushState({},'Issue ' + e.name,'/issues/' + e.issueId)
         }
 
     })
