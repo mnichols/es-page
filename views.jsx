@@ -44,7 +44,14 @@ App.Views.Groups = React.createClass({
             ,name: this.refs.groupName.getDOMNode().value
         })
     }
+    ,renderGroups: function(model){
+        return model.groups.map(function(grp){
+            return <li>{grp.name}</li>
+        })
+    }
     ,render: function(){
+        var model = this.props.model
+        var groups = this.renderGroups(model)
         return (
             <div className="groups">
                 <h1>Groups</h1>
@@ -52,6 +59,10 @@ App.Views.Groups = React.createClass({
                     <input type="text" className="groupName" ref="groupName"/>
                     <button type="submit">Create Group</button>
                 </form>
+                <h2>Current Groups</h2>
+                <ul>
+                    {groups}
+                </ul>
             </div>
         )
     }

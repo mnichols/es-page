@@ -407,7 +407,8 @@ App.Models.groups = stampit
             this.id = e.id
             this.groups = []
         }
-        ,addGroup: function(groupName) {
+        ,addGroup: function(cmd) {
+            var groupName = cmd.name
             if(!groupName) {
                 throw new Error('goupName is required')
             }
@@ -424,13 +425,18 @@ App.Models.groups = stampit
                     ,name: groupName
                 })
             })
+            .then(this.render)
         }
-        ,renameGroup: function(groupId, groupName) {
+        ,renameGroup: function(cmd) {
+            var groupId = cmd.id
+                ,groupName = cmd.name
+                ;
             return this.raise({
                 event: 'renameGroup'
                 ,groupId: groupId
                 ,name: groupName
             })
+            .then(this.render)
         }
         ,onaddGroup: function(e) {
             var grp = App.Models.group({
