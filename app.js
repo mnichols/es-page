@@ -62,6 +62,9 @@ uow = stampit()
         //cause the event provider to contribute its events
         //to the event store.
         ,add: function(eventProvider) {
+            if(!this.current) {
+                throw new Error('unit of work is not started')
+            }
             this.current.add(eventProvider)
             return this
         }
@@ -122,15 +125,15 @@ bus = stampit()
 storage = stampit()
     .state({
         events: []
-        ,eventProviders: {}
+        ,identityMap: {}
         ,revision: 0
         ,envelopes: []
         ,streaming: false
+        ,restored: 0
     })
     .methods({
         commit: function(revision, eventProvider) {
             var pending = eventProvider.events
-            //this.revision = this.revision += pending.length
             var envelope = {
                 revision: revision
                 ,events: pending.splice(0,pending.length)
@@ -150,7 +153,7 @@ storage = stampit()
         ,register: function(eventProvider) {
             log('REGISTERING',eventProvider.id,eventProvider)
             //this registers the provider to receive events during a stream
-            this.eventProviders[eventProvider.id] = eventProvider
+            this.identityMap[eventProvider.id] = eventProvider
         }
     })
     .enclose(function(){
@@ -162,10 +165,10 @@ storage = stampit()
             this.streaming = true
             var event = events.shift()
             debug('processing',event.id,event.event,event)
-            var model = this.eventProviders[event.id]
+            var model = this.identityMap[event.id]
             if(!model) {
                 var msg = 'model not found for ' + event.id
-                error(msg,this.eventProviders)
+                error(msg,this.identityMap)
                 throw new Error(msg)
             }
             return Promise.resolve(event)
@@ -179,6 +182,10 @@ storage = stampit()
         }
         stampit.mixIn(this, {
             restore: function(eventable, revision) {
+                //if restoring to a previous revision
+                //a 'commit' should cause the pruning of events between `MAX(events.revision)` and `revision`
+                //This seems to make the storage be in a 'restored' state until a commit, which effectively splices revisions and
+                //makes the current revision `revision+1`
                 warn('restoring to',revision)
                 this.register(eventable)
                 var envelopes = this.envelopes.filter(function(e) {
