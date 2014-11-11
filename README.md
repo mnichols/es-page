@@ -5,15 +5,6 @@ Goals
 
 Demonstrate forward only models for page transitions.
 
-# Distinctions
-
-The question of when to render view models is tricky. Say we are streaming
-events into models and those models would render (based on their state) 
-their template, probably creating containing elements for child models.
-
-When does this render occur to hydrate the DOM hierarchy? This question 
-demands some distinctions be dealt with between a server-side ES app and 
-a stateful client-side ES app.
 
 ### Transactions and Units of Work
 
@@ -68,7 +59,31 @@ When a user clicks the 'forward' control to go through history, he expects to se
 not the future that existed before going back in time and creating a new path.
 
 Another approach is to treat going 'back' as in fact appending all events up to _n_ to the event history and then replaying.
-So going back in time is actually going forward to a representation built from past events.
+So going back in time is actually going forward to a representation built from past events. The next discussion will
+show this interesting worldview is not very practical though.
+
+Assume the following path:
+
+* user has arrived at revision 5
+* user goes back to revision 4
+* user goes back to revision 3
+* user selects a new code path (different from what would imitate the path toward revision 5). User is now at revision 6
+* user goes back -1. **Which puts the user at revision 3, not 5**.
+* when user goes forward, he expects to be at revision 6, not 4 or 5.
+
+
+What does this mean? Revisions 4 and 5 are not very useful anymore. 
+This means that if a transaction commits events, then it will _always_ be tagged as the `current revision + 1` and events which
+are greater than the current revision will be *wiped out from event storage*.
+
+This would change the above path to :
+
+* user has arrived at revision 5
+* user goes back to revision 4
+* user goes back to revision 3
+* user selects a new code path (different from what would imitate the path toward revision 5). User is marked as being at revision 4 (not '6' like above).
+* user goes back -1. This puts the user where they 'were' like she expects.
+* when user goes forward, he lands at our new revision 4 (the new code path).
 
 ### HTML5 history
 
@@ -84,6 +99,12 @@ To see this at work, look in the source at `app.js` and grep 'window.history' an
 'popstate'.
 
 
+### Rigid pattern -> Scalable solution
+
+It is important to note that all state changes to event provider models _must_ abide by the command / transactional pipeline. Stepping outside 
+the transactional construct will not allow models to retain data integrity during forward/backward playbacks.
+This appears to be rigid at first, but the freedom gained from eventing voids this concern and in fact increases code quality because
+of its predictability.
 
 
 
