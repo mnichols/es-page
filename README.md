@@ -61,29 +61,27 @@ to revisions 4 and 5? If we 'keep' those revisions then we could allow the
 user to go 'forward'. 
 On the other hand, if the user selects a new path from revision 3 he effectively
 created two branches... one branch having original revs 4/5, and now the other having a
-new revision 4.
-What if we want to allow the user to go 'back' to revision 5 (in the original branch)?
-What does it mean to even _be_ on a branch now since you jumped from one branch to another?
+new revision 4. Parallel models emerge, but is this really useful?
 
-How do 'links' play into this? When one clicks on a link for a resource, the page models
-respond and build the appropriate model for displaying that resource, emitting events along
-the way that bump the current revision.
+The answer is 'yes', but not really for a page which is representing the 'truth' singularly.
+When a user clicks the 'forward' control to go through history, he expects to see the recent future, 
+not the future that existed before going back in time and creating a new path.
+
+Another approach is to treat going 'back' as in fact appending all events up to _n_ to the event history and then replaying.
+So going back in time is actually going forward to a representation built from past events.
 
 ### HTML5 history
 
-How does this model relate to HTML5 history? 
-Urls are minted by using `pushState` which accepts a _state_ parameter.
-If a model should 'have an address', then it is trivial to update the url
-from one of its event handlers; eg :
+How does this model relate to/integrate with HTML5 history? 
+We can wire up the (singleton) page revision to supervise revisions of
+the page since we are doing transactions. When a transaction has been
+committed, then a call to `window.history.pushState` will cause the current
+revision to be included in history with the `state` argument to the function
+simply being the revision that should be restored `onpopstate`. Note that urls are _optional_ for `pushState`.
+_The back and forward button on the browser has become enabled._ 
 
-```js
-
-...
-oninitialized: function(e) {
-    window.history.pushState(null,null, '/issues/' + e.issueId)
-}
-```
-
+To see this at work, look in the source at `app.js` and grep 'window.history' and
+'popstate'.
 
 
 

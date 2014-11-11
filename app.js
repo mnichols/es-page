@@ -44,6 +44,15 @@ uow = stampit()
             this.onFlushes.forEach(function(cb){
                 return cb(this.revision)
             },this)
+
+            /*
+            window.history.pushState({
+                revision: this.revision
+            },null, '/revisions/' + this.revision)
+            */
+            window.history.pushState({
+                revision: this.revision
+            },null, null)
             return this
         }
         //if the storage is fastforwarding,
@@ -326,6 +335,14 @@ App = stampit
         this.bus.subscribe(this.id,'start',this)
         this.bus.subscribe(this.id,'reset',this)
         this.bus.subscribe(this.id,'goToRevision',this)
+
+
+        window.addEventListener('popstate',function(e) {
+            log('popstate received : RESTORING REVISION',e.revision, e)
+            this.goToRevision({
+                revision: e.state.revision
+            })
+        }.bind(this))
 
     })
     .create()

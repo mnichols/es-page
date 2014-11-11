@@ -116,10 +116,10 @@ App.Views.Revision = React.createClass({
     ,goToRevision: function(e) {
         e.preventDefault()
         var value = this.refs.revision.getDOMNode().value
-        App.bus.send({
-            command: 'goToRevision'
-            ,id: 'app'
-            ,revision: parseInt(value, 10)
+        //cheater! invoke the method directly
+        //to avoid transaction (and bumping page revision)
+        App.goToRevision({
+            revision: parseInt(value, 10)
         })
     }
     ,render: function(){
