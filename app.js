@@ -5,12 +5,75 @@ var storage
     ,renderable
     ,bus
     ,subscription
+    ,unitOfWork
+    ,unitOfWorkFactory
     ,log = console.log.bind(console)
     ,warn = console.warn.bind(console)
     ,debug = console.debug.bind(console)
     ,error = console.error.bind(console)
     ,App
     ;
+
+transaction = stampit()
+    .state({
+        revision: -1
+        ,timestamp: new Date().toUTCString()
+        ,events: []
+    })
+
+unitOfWork = stampit()
+    .state({
+        db: undefined
+        ,eventIndex: -1
+    })
+    .enclose(function(){
+        var identityMap = {}
+        stampit.mixIn(this,{
+            flush: function(){
+                //creates a transaction
+
+            }
+            ,get: function(eventProviderId) {
+                var obj = identityMap[eventProviderId]
+                if(obj) {
+                    return obj
+                }
+                throw new Error('eventProvider ' + eventProviderId + ' not being tracked.')
+            }
+            ,track: function(eventProvider) {
+                if(!eventProvider) {
+                    throw new Error('eventProvider is required')
+                }
+                if(!eventProvider.id) {
+                    throw new Error('an event provider must have an `id`')
+                }
+                if(identityMap[eventProvider.id]) {
+                    throw new Error('eventProvider ' + eventProvider.id + ' is already being tracked')
+                }
+                return identityMap[eventProvider.id] = eventProvider
+            }
+        })
+
+    })
+
+unitOfWorkFactory = stampit()
+    .state({
+        current: undefined
+    })
+    .methods({
+        start: function(){
+            return (this.current = this.current ||  unitOfWork({
+                db: this.db
+            }))
+        }
+        ,flush: function(unitOfWork) {
+            return unitOfWork.flush()
+                .bind(this)
+                .then(function(){
+                    this.current = undefined
+                })
+        }
+    })
 
 
 transaction = stampit()
